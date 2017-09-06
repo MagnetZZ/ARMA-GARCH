@@ -14,7 +14,7 @@ pdf = a matrix of pdf at each element of u1 of the distribution
 
 
 INPUTS:
-xt is time series data, gt_series = xt_(t-1) 
+xt is time series data, gt = xt_(t-1) 
 e1: residual
 sigmat: conditional variance
 u1:  i.d.d. variance, obeyskewed-t distribution 
@@ -44,13 +44,41 @@ import matplotlib.pyplot as plt
 import logging
 import sys
 
-def Skewtdis_max_likelyhood(self, paras): 
+def Get_Sigmat(paras, et_lag1, sigmat_lag1):  
+	c0, c1, c2 = para[0], para[1], para[2]   
+	# alpha_0  alpha_1  beta_1
+	sigma_t2 = c0 + c1 * et_lag1*et_lag1 + c2 * sigmat_lag1*sigmat_lag1
+	sigma_t = math.sqrt(sigma_t2)
+	return sigma_t
+
+#returns the pdf at u1 of Hansen's (1994) 'skewed t' distribution 
+def Skewt_dis_pdf(u1, nu, lambda0):
+
+	Gauss_u1 = u1
+	T, n = len(Gauss_u1), len(Gauss_u1)
+	pdf1, pdf2, pdf = np.zeros(n), np.zeros(n), np.zeros(n)
+	nulist = nu * np.ones(T)  # initializing
+	lambda_list = lambda0 * np.ones(T)
+	c = gamma((nulist+1)/2) / (np.sqrt(math.pi*(nulist-2))*gamma(nulist/2))
+	a = 4.0 * lambda_list * c* ((nulist-2)/(nulist-1))
+	b = np.sqrt(1 + 3 * lambda_list * lambda_list - a * a)
+	avb=-a/b
+
+	pdf1 = b*c*np.power(1 + 1/(nulist-2)* np.power((b*Gauss_u1+a)/(1-lambda_list), 2), -(nulist+1)/2)
+	pdf2 = b*c*np.power(1 + 1/(nulist-2)* np.power((b*Gauss_u1+a)/(1+lambda_list), 2), -(nulist+1)/2)
+	pdf = np.zeros(n)
+	for i in range(0, n):
+	    pdf[i] = pdf1[i]*int(Gauss_u1[i]<avb[i]) + pdf2[i] *int(Gauss_u1[i] >= avb[i])
+	return pdf
+
+
+def Skewtdis_max_likelyhood(paras): 
 
 	# expression of Maximum Likelihood Estimate
 	# nu and lambda: skewed-T disribution parameters	    
 	# supposed xt=0 when t=0
 
-	global data_xt, data_gt
+	global x_t, g_t
 	global intial_residual
 
 	n = len(g_t)
@@ -64,20 +92,20 @@ def Skewtdis_max_likelyhood(self, paras):
 	# when t=0
 	e1[0], sigmat[0] = intial_residual[0], intial_residual[1]
 	e1, u1, sigmat = np.zeros(n), np.zeros(n), np.zero(n)
-	e1[0] = self.xt[0] - (a0 + a1 * self.gt_series[0])     
-	sigmat[0] = self.Get_Sigmat(para_GARCH1, 0, 0.01) 
+	e1[0] = x_t[0] - (a0 + a1 * g_t[0])     
+	sigmat[0] = Get_Sigmat(para_GARCH1, 0, 0.01) 
 	u1[0] = e1[0] / sigmat[0]  # used for Likelihood
 
 	# u1 when i>1
 	for i in range(1, n):
-		e1[i] = self.xt[i] - (a0 + a1 * self.gt_series[i] + a2 * e1[i-1])
-		sigmat[i] = self.Get_Sigmat(para_GARCH1, e1[i-1], sigmat[i-1])
+		e1[i] = x_t[i] - (a0 + a1 * g_t[i] + a2 * e1[i-1])
+		sigmat[i] = Get_Sigmat(para_GARCH1, e1[i-1], sigmat[i-1])
 		u1[i] = e1[i] / sigmat[i]      
 		
 	#calculate the mle based on skewed-t distribution
 	#since min(-lnlikelihood)=max(lnlikelihood),a minus is added
 	like = []
-	like = self.Skew_tdis_pdf(u1, nu, lambda0)
+	like = Skewt_dis_pdf(u1, nu, lambda0)
 	lnlike = sum(np.log(like)) - sum(np.log(sigmat))
 	f = -lnlike 
 	return f
@@ -85,43 +113,13 @@ def Skewtdis_max_likelyhood(self, paras):
 
 class Arma11_Garch11_method():
 
-	pdf = []
 	xt = []
-	gt_series = [] 
-	intial_residual = [0, 0.1]  # the initial e1[0] and sigmat[0] at t=0
+	gt = [] 
 
 	def __init__(self, parameters, parasbound, filename):
 		self.intial_fit_paras = parameters
 		self.intial_fit_paras_bounds = parasbound
 		self.data_filename = filename
-
-
-	def Get_Sigmat(self, paras, et_lag1, sigmat_lag1):  
-		c0, c1, c2 = para[0], para[1], para[2]   
-		# alpha_0  alpha_1  beta_1
-		sigma_t2 = c0 + c1 * et_lag1*et_lag1 + c2 * sigmat_lag1*sigmat_lag1
-		sigma_t = math.sqrt(sigma_t2)
-		return sigma_t
-
-	#returns the pdf at u1 of Hansen's (1994) 'skewed t' distribution 
-	def Skewt_dis_pdf(self, u1, nu, lambda0):
-
-		Gauss_u1 = u1
-		T, n = len(Gauss_u1), len(Gauss_u1)
-		pdf1, pdf2, pdf = np.zeros(n), np.zeros(n), np.zeros(n)
-		nulist = nu * np.ones(T)  # initializing
-		lambda_list = lambda0 * np.ones(T)
-		c = gamma((nulist+1)/2) / (np.sqrt(math.pi*(nulist-2))*gamma(nulist/2))
-		a = 4.0 * lambda_list * c* ((nulist-2)/(nulist-1))
-		b = np.sqrt(1 + 3 * lambda_list * lambda_list - a * a)
-		avb=-a/b
-
-		pdf1 = b*c*np.power(1 + 1/(nulist-2)* np.power((b*Gauss_u1+a)/(1-lambda_list), 2), -(nulist+1)/2)
-		pdf2 = b*c*np.power(1 + 1/(nulist-2)* np.power((b*Gauss_u1+a)/(1+lambda_list), 2), -(nulist+1)/2)
-		pdf = np.zeros(n)
-		for i in range(0, n):
-		    pdf[i] = pdf1[i]*int(Gauss_u1[i]<avb[i]) + pdf2[i] *int(Gauss_u1[i] >= avb[i])
-		return pdf
 
 
 	def AG_data_process(self):
@@ -146,10 +144,11 @@ class Arma11_Garch11_method():
 		# IndexData_2 = IndexData_1  # second difference
 
 		self.xt = IndexData_2 
+		print(len(self.xt))
 
 
-	def sent_xt_data(self):
-		return self.xt
+	def sent_xtgt_data(self):
+		return [self.xt, self.gt] 
 
 
 	def Arma_Garch_fitting(self):
@@ -163,22 +162,23 @@ class Arma11_Garch11_method():
 		# numbers of coefficient to be test
 		m = 10  
 		## autocorrelation coefficient and p-value
-		acf, q, p = sm.tsa.acf(self.xt, nlags=m, qstat=True)  
+		acf, q, p = sm.tsa.acf(self.xt, nlags=m, qstat=True) 
+
 		out = np.c_[range(1,11), acf[1:], q, p]
 		output=pd.DataFrame(out, columns=['lag', "AC", "Q", "P-value"])
 		output = output.set_index('lag')
 		print(output)
-
+		# raw_input()
 		# III: PAC test 
 		#####################################################
 		# please add PAC test funtion here , and import the package at first
 		####################################################
 
 		# get the optimal parameters	    
-		self.gt_series = [0].extend(self.xt[0:-1])
+		self.gt = [0]
+		self.gt.extend(self.xt[0:-1])
 
 		#ARMR(1,1) parameters
-		self.intial_fit_paras
 		a0_0, a1_0, a2_0 = self.intial_fit_paras[2], self.intial_fit_paras[3], \
 		self.intial_fit_paras[4] 
 		a = [a0_0, a1_0, a2_0] 
@@ -195,8 +195,10 @@ class Arma11_Garch11_method():
 		# initialization:
 		bnds = self.intial_fit_paras_bounds
 		cons = ({'type': 'ineq', 'fun': lambda x: - x[6] - x[7] + 0.9999})
-		fun = self.Skewtdis_max_likelyhood()
+		fun = Skewtdis_max_likelyhood
+
 		res = minimize(fun, self.intial_fit_paras, bounds=bnds, constraints=cons)
+		raw_input()
 		para = res.x
 		print(res.x)
 		print(res.message)
@@ -214,21 +216,21 @@ class Arma11_Garch11_method():
 
 
 		# get estimated time series: fatcval
-		e1[0] = self.xt[0]-(a0 + a1*self.gt_series[0])
-		fitval[0] = a0 + a1*self.gt_series[0]
-		sigmat[0] = self.Get_Sigmat(para_GARCH1, e1_0, sigma1_0)
+		e1[0] = self.xt[0]-(a0 + a1*self.gt[0])
+		fitval[0] = a0 + a1*self.gt[0]
+		sigmat[0] = Get_Sigmat(para_GARCH1, e1_0, sigma1_0)
 		u1[0] = e1[0] / sigmat[0]
 
 		for i in range(1,n):
-			fitval[i] = (a0 + a1 * self.gt_series[i] + a2 * e1[i-1]) 
+			fitval[i] = (a0 + a1 * self.gt[i] + a2 * e1[i-1]) 
 			e1[i] = self.xt[i] - fitval[i]
-			sigmat[i] = self.Get_Sigmat(para_GARCH1, e1[i-1], sigma1[i-1])
+			sigmat[i] = Get_Sigmat(para_GARCH1, e1[i-1], sigma1[i-1])
 			u1[i] = e1[i] / sigmat[i]
 
-		# rt[0] = a0 + a1 * self.gt_series[0]
+		# rt[0] = a0 + a1 * self.gt[0]
 		# sigma1t[0] = self.Get_Sigmat(para_GARCH1, 0, np.std(self.xt, ddof = 1))
 		# for i in range(1,n):
-		#	rt[i] = a0 + a1 * self.gt_series[i] + a2 * e1[i-1]
+		#	rt[i] = a0 + a1 * self.gt[i] + a2 * e1[i-1]
 		#	sigma1t[i] = self.Get_Sigmat(para_GARCH1, e1[i-1], [i-1])
 
 
@@ -237,7 +239,11 @@ if __name__ == '__main__':
 	bounds = ((2, 10000000000), (-1, 1), (-100, 100), (-100, 100), (-100, 100), \
 		(0, 100), (0.1, 1), (0.1, 1))
 	filename = 'data.csv' 
+	intial_residual = [0, 0.1]   # the initial e1[0] and sigmat[0] at t=0
 	AG_member = Arma11_Garch11_method(ini_paras, bounds, filename)
+	AG_member.AG_data_process()
+	[x_t, g_t] = AG_member.sent_xtgt_data()
+
 	try:
 		AG_member.Arma_Garch_fitting()
 	except Exception as e:
