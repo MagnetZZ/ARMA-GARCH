@@ -215,16 +215,6 @@ class Arma11_Garch11_method():
 		#raw_input()
 
 
-		# III: PAC test 
-		#######################################################################
-		# please add PAC test funtion here , and import the package at first
-		######################################################################
-
-
-
-
-
-
 	def sent_xtgt_data(self):
 		return [self.xt, self.gt] 
 
